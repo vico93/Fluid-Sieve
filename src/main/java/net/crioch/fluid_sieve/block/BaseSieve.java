@@ -1,202 +1,202 @@
 package net.crioch.fluid_sieve.block;
 
-import net.crioch.fluid_sieve.loot.context.FluidSieveLootContextTypes;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.fluid.Fluids;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.loot.LootTable;
-import net.minecraft.loot.context.*;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.TypeFilter;
-import net.minecraft.util.context.ContextParameterMap;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.WorldView;
-import net.minecraft.world.tick.ScheduledTickView;
-
 import java.util.Iterator;
 import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ScheduledTickAccess;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SimpleWaterloggedBlock;
+import net.minecraft.world.level.block.SupportType;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.entity.EntityTypeTest;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
-public class BaseSieve extends Block implements Waterloggable {
-    private static final VoxelShape selectionShape = VoxelShapes.union(
-            createCuboidShape(0, 0, 0, 1, 16, 1),
-            createCuboidShape(15, 0, 0, 16, 16, 1),
-            createCuboidShape(0, 0, 15, 1, 16, 16),
-            createCuboidShape(15, 0, 15, 16, 16, 16),
-            createCuboidShape(1, 1, 0, 15, 14, 1),
-            createCuboidShape(1, 1, 15, 15, 14, 16),
-            createCuboidShape(0, 1, 1, 1, 14, 16),
-            createCuboidShape(15, 1, 1, 16, 14, 16)
+public class BaseSieve extends Block implements SimpleWaterloggedBlock {
+    private static final VoxelShape SELECTION_SHAPE = Shapes.or(
+            Block.box(0, 0, 0, 1, 16, 1),
+            Block.box(15, 0, 0, 16, 16, 1),
+            Block.box(0, 0, 15, 1, 16, 16),
+            Block.box(15, 0, 15, 16, 16, 16),
+            Block.box(1, 1, 0, 15, 14, 1),
+            Block.box(1, 1, 15, 15, 14, 16),
+            Block.box(0, 1, 1, 1, 14, 16),
+            Block.box(15, 1, 1, 16, 14, 16)
     );
 
-    public BaseSieve(Settings settings, Identifier key) {
-        super(settings.ticksRandomly().nonOpaque().registryKey(RegistryKey.of(RegistryKeys.BLOCK, key)));
-        this.setDefaultState(
-                this.getStateManager()
-                        .getDefaultState()
-                        .with(Properties.WATERLOGGED, false)
-        );
+    public BaseSieve(BlockBehaviour.Properties properties, Identifier key) {
+        super(properties.randomTicks().noOcclusion().setId(ResourceKey.create(Registries.BLOCK, key)));
+        this.registerDefaultState(this.getStateDefinition().any().setValue(BlockStateProperties.WATERLOGGED, false));
     }
 
     @Override
     protected FluidState getFluidState(BlockState state) {
-        if (state.get(Properties.WATERLOGGED)) {
-            return Fluids.WATER.getStill(false);
+        if (state.getValue(BlockStateProperties.WATERLOGGED)) {
+            return Fluids.WATER.defaultFluidState();
         }
+
         return super.getFluidState(state);
     }
 
     @Override
-    protected void randomTick(BlockState state, ServerWorld world, BlockPos pos, Random random) {
-        boolean waterlogged = state.get(Properties.WATERLOGGED);
+    protected void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+        boolean waterlogged = state.getValue(BlockStateProperties.WATERLOGGED);
+        Identifier id = BuiltInRegistries.FLUID.getKey(waterlogged ? Fluids.WATER : Fluids.EMPTY);
+        List<ItemStack> loot = this.getLoot(id, world, state, pos, random);
 
-        Identifier id = Registries.FLUID.getId(waterlogged ? Fluids.WATER.getStill() : Fluids.EMPTY);
+        if (loot.isEmpty()) {
+            return;
+        }
 
-        List<ItemStack> loot = getLoot(id, world, state, pos, random);
+        BlockEntity blockEntity = world.getBlockEntity(pos.below());
+        if (blockEntity instanceof Container container) {
+            int containerSize = container.getContainerSize();
+            boolean containerChanged = false;
 
-        if (!loot.isEmpty()) {
-            // Get the block entity below the sieve
-            BlockPos blockPos = pos.down();
-            BlockEntity blockEntity = world.getBlockEntity(blockPos);
-
-            if (blockEntity instanceof Inventory inventory) {
-                int inventorySize = inventory.size();
-                boolean inventoryChanged = false;
-
-                Iterator<ItemStack> iterator = loot.iterator();
-                int firstEmptySlot = 0;
-                while (iterator.hasNext() && firstEmptySlot < inventorySize) {
-                    ItemStack stack = iterator.next();
-                    int initialCount = stack.getCount();
-                    firstEmptySlot = insert(stack, inventory, firstEmptySlot);
-                    if (stack.isEmpty()) {
-                        inventoryChanged = true;
-                        iterator.remove();
-                    } else if (initialCount - stack.getCount() > 0) {
-                        inventoryChanged = true;
-                    }
+            Iterator<ItemStack> iterator = loot.iterator();
+            int firstEmptySlot = 0;
+            while (iterator.hasNext() && firstEmptySlot < containerSize) {
+                ItemStack stack = iterator.next();
+                int initialCount = stack.getCount();
+                firstEmptySlot = insert(stack, container, firstEmptySlot);
+                if (stack.isEmpty()) {
+                    containerChanged = true;
+                    iterator.remove();
+                } else if (initialCount - stack.getCount() > 0) {
+                    containerChanged = true;
                 }
+            }
 
-                if (inventoryChanged) {
-                    inventory.markDirty();
-                }
+            if (containerChanged) {
+                container.setChanged();
+            }
 
-                if (!loot.isEmpty()) {
-                    spawnStacksInWorld(world, pos, loot);
-                }
-            } else {
+            if (!loot.isEmpty()) {
                 spawnStacksInWorld(world, pos, loot);
             }
+        } else {
+            spawnStacksInWorld(world, pos, loot);
         }
     }
 
     @Override
-    protected boolean canPlaceAt(BlockState state, WorldView world, BlockPos pos) {
-        BlockState downState = world.getBlockState(pos.down());
-        return downState.isSideSolid(world, pos.up(), Direction.UP, SideShapeType.FULL) || downState.isOf(Blocks.HOPPER);
+    protected boolean canSurvive(BlockState state, LevelReader world, BlockPos pos) {
+        BlockPos downPos = pos.below();
+        BlockState downState = world.getBlockState(downPos);
+        return downState.isFaceSturdy(world, downPos, Direction.UP, SupportType.FULL) || downState.is(Blocks.HOPPER);
     }
 
     @Override
-    protected BlockState getStateForNeighborUpdate(BlockState state, WorldView world, ScheduledTickView tickView, BlockPos pos, Direction direction, BlockPos neighborPos, BlockState neighborState, Random random) {
-        if (this.canPlaceAt(state, world, pos)) {
+    protected BlockState updateShape(
+            BlockState state,
+            LevelReader world,
+            ScheduledTickAccess ticks,
+            BlockPos pos,
+            Direction direction,
+            BlockPos neighborPos,
+            BlockState neighborState,
+            RandomSource random
+    ) {
+        if (this.canSurvive(state, world, pos)) {
             return state;
         }
 
-        return Blocks.AIR.getDefaultState();
+        return Blocks.AIR.defaultBlockState();
     }
 
     @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        BlockPos blockPos = ctx.getBlockPos();
-        FluidState fluidState = ctx.getWorld().getFluidState(blockPos);
-        return this.getDefaultState().with(Properties.WATERLOGGED, fluidState.getFluid() == Fluids.WATER);
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        BlockPos pos = ctx.getClickedPos();
+        FluidState fluidState = ctx.getLevel().getFluidState(pos);
+        return this.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, fluidState.getType() == Fluids.WATER);
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
-        builder.add(Properties.WATERLOGGED);
-    }
-
-
-    @Override
-    public VoxelShape getOutlineShape(BlockState state, BlockView view, BlockPos pos, ShapeContext context) {
-        return selectionShape;
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.WATERLOGGED);
     }
 
     @Override
-    public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
-        return selectionShape;
+    protected VoxelShape getShape(BlockState state, BlockGetter view, BlockPos pos, CollisionContext context) {
+        return SELECTION_SHAPE;
     }
 
-    private List<ItemStack> getLoot(Identifier fluidId, ServerWorld world, BlockState state, BlockPos pos, Random random) {
-        Identifier path = fluidId.withPrefixedPath("sieve/");
-        RegistryKey<LootTable> key = RegistryKey.of(RegistryKeys.LOOT_TABLE, path);
+    @Override
+    protected VoxelShape getInteractionShape(BlockState state, BlockGetter world, BlockPos pos) {
+        return SELECTION_SHAPE;
+    }
 
-        LootTable lootTable = world.getServer().getReloadableRegistries().getLootTable(key);
+    private List<ItemStack> getLoot(Identifier fluidId, ServerLevel world, BlockState state, BlockPos pos, RandomSource random) {
+        Identifier path = fluidId.withPrefix("sieve/");
+        ResourceKey<LootTable> key = ResourceKey.create(Registries.LOOT_TABLE, path);
+        LootTable lootTable = world.getServer().reloadableRegistries().getLootTable(key);
 
-        // Exit early if the loot table isn't defined
-        if (lootTable.equals(LootTable.EMPTY)) {
+        if (lootTable == LootTable.EMPTY) {
             return List.of();
         }
 
-        ContextParameterMap.Builder builder = new ContextParameterMap.Builder()
-                .add(LootContextParameters.BLOCK_STATE, state)
-                .add(LootContextParameters.ORIGIN, pos.toCenterPos());
+        LootParams.Builder builder = new LootParams.Builder(world)
+                .withParameter(LootContextParams.BLOCK_STATE, state)
+                .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
+                .withParameter(LootContextParams.TOOL, ItemStack.EMPTY);
 
-
-        // Get all Entities within the sieve
-        List<? extends Entity> entitiesWithinBlock = world.getEntitiesByType(TypeFilter.instanceOf(Entity.class), (livingEntity -> livingEntity.getBlockPos().equals(pos)));
-
-        // If any are within it, add a random one as the 'this' entity for the loot table
+        List<? extends Entity> entitiesWithinBlock = world.getEntities(EntityTypeTest.forClass(Entity.class), entity -> entity.blockPosition().equals(pos));
         if (!entitiesWithinBlock.isEmpty()) {
-
-            builder.addNullable(LootContextParameters.THIS_ENTITY, entitiesWithinBlock.get(random.nextInt(entitiesWithinBlock.size())));
+            builder.withOptionalParameter(LootContextParams.THIS_ENTITY, entitiesWithinBlock.get(random.nextInt(entitiesWithinBlock.size())));
         }
 
-        ContextParameterMap map = builder.build(FluidSieveLootContextTypes.FLUID_SIEVE);
-
-        LootWorldContext context = new LootWorldContext(world, map, null, 0);
-
-        return lootTable.generateLoot(context);
+        return lootTable.getRandomItems(builder.create(LootContextParamSets.BLOCK));
     }
 
-    private static void spawnStacksInWorld(ServerWorld world, BlockPos pos, List<ItemStack> stacks) {
+    private static void spawnStacksInWorld(ServerLevel world, BlockPos pos, List<ItemStack> stacks) {
         for (ItemStack stack : stacks) {
-            Block.dropStack(world, pos, stack);
+            Block.popResource(world, pos, stack);
         }
     }
 
-    private static int insert(ItemStack stack, Inventory inventory, int firstEmptySlot) {
+    private static int insert(ItemStack stack, Container container, int firstEmptySlot) {
         if (stack.isStackable()) {
-            for (int slotIndex = firstEmptySlot; slotIndex < inventory.size(); slotIndex++) {
-                ItemStack slot = inventory.getStack(slotIndex);
-                if (slot.isOf(stack.getItem())) {
-                    int maxStack = Math.min(slot.getMaxCount(), inventory.getMaxCountPerStack());
+            for (int slotIndex = firstEmptySlot; slotIndex < container.getContainerSize(); slotIndex++) {
+                ItemStack slot = container.getItem(slotIndex);
+                if (slot.getItem() == stack.getItem()) {
+                    int maxStack = Math.min(slot.getMaxStackSize(), container.getMaxStackSize(slot));
                     int amount = Math.min(maxStack - slot.getCount(), stack.getCount());
-                    slot.increment(amount);
-                    inventory.setStack(slotIndex, slot);
-                    stack.decrement(amount);
+                    slot.grow(amount);
+                    container.setItem(slotIndex, slot);
+                    stack.shrink(amount);
                 } else if (slot.isEmpty()) {
-                    inventory.setStack(slotIndex, stack.copy());
-                    stack.decrement(stack.getCount());
+                    container.setItem(slotIndex, stack.copy());
+                    stack.shrink(stack.getCount());
                 }
 
-                if (firstEmptySlot - slotIndex == 0 && slot.getMaxCount() - slot.getCount() == 0) {
+                if (firstEmptySlot - slotIndex == 0 && slot.getMaxStackSize() - slot.getCount() == 0) {
                     firstEmptySlot++;
                 }
 
@@ -205,10 +205,10 @@ public class BaseSieve extends Block implements Waterloggable {
                 }
             }
         } else {
-            for (int slotIndex = firstEmptySlot; slotIndex < inventory.size(); slotIndex++) {
-                ItemStack slot = inventory.getStack(slotIndex);
+            for (int slotIndex = firstEmptySlot; slotIndex < container.getContainerSize(); slotIndex++) {
+                ItemStack slot = container.getItem(slotIndex);
                 if (slot.isEmpty()) {
-                    inventory.setStack(slotIndex, stack.split(1));
+                    container.setItem(slotIndex, stack.split(1));
                     if (firstEmptySlot - slotIndex == 0) {
                         firstEmptySlot++;
                     }

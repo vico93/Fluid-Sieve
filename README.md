@@ -1,5 +1,8 @@
 # Fluid Sieve: Rewoven
-A remake of CheaterCode's [Fluid Sieve](https://github.com/CheaterCodes/FluidSieve) for Minecraft Fabric 1.21+.
+A remake of CheaterCode's [Fluid Sieve](https://github.com/CheaterCodes/FluidSieve) for Minecraft Fabric 26.1 (currently on snapshot 11).
+
+## WARNING
+This is a **vibe-coded** update of the mod for 26.1-s10, for my own purposes. If you hate AI and/or fear for the security and stability of it, please don't (try to) use that. And if you have interest to contribute to minimize the possible slop, feel free to ask on issues or do a PR.
 
 ## Overview
 Introduces two new blocks: String Sieve and Dense String Sieve. These can be placed on top of any solid block, or a hopper, and generates items. Unlike the original mod, the sieves are not block entities and depend on random ticks to generate items.
