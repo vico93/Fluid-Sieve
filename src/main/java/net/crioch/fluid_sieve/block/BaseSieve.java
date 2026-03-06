@@ -1,7 +1,11 @@
 package net.crioch.fluid_sieve.block;
 
-import net.crioch.fluid_sieve.loot.context.FluidSieveLootContextTypes;
-import net.minecraft.block.*;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.ShapeContext;
+import net.minecraft.block.SideShapeType;
+import net.minecraft.block.Waterloggable;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.fluid.FluidState;
@@ -10,7 +14,9 @@ import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemPlacementContext;
 import net.minecraft.item.ItemStack;
 import net.minecraft.loot.LootTable;
-import net.minecraft.loot.context.*;
+import net.minecraft.loot.context.LootContextParameters;
+import net.minecraft.loot.context.LootContextTypes;
+import net.minecraft.loot.context.LootWorldContext;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
@@ -168,7 +174,9 @@ public class BaseSieve extends Block implements Waterloggable {
             builder.addNullable(LootContextParameters.THIS_ENTITY, entitiesWithinBlock.get(random.nextInt(entitiesWithinBlock.size())));
         }
 
-        ContextParameterMap map = builder.build(FluidSieveLootContextTypes.FLUID_SIEVE);
+        builder.add(LootContextParameters.TOOL, ItemStack.EMPTY);
+
+        ContextParameterMap map = builder.build(LootContextTypes.BLOCK);
 
         LootWorldContext context = new LootWorldContext(world, map, null, 0);
 

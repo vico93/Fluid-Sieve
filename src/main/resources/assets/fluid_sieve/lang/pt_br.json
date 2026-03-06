@@ -1,0 +1,8 @@
+{
+  "block.fluid_sieve.string_sieve": "Filtro de Malha",
+  "block.fluid_sieve.dense_sieve": "Filtro de Malha Fina",
+  "item.fluid_sieve.string_mesh": "Malha",
+  "item.fluid_sieve.dense_mesh": "Malha Fina",
+  "item.fluid_sieve.string_sieve": "Filtro de Malha",
+  "item.fluid_sieve.dense_sieve": "Filtro de Malha Fina"
+}
